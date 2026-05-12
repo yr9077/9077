@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Generate SQL – DB Script Agent{% endblock %}
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h2 class="fw-bold"><i class="bi bi-magic me-2 text-primary"></i>Generate SQL Script</h2>
+        <p class="text-muted">Describe what you need and let AI generate a validated SQL script.</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Request Description <span class="text-danger">*</span></label>
+                    <textarea id="requestText" class="form-control" rows="5"
+                        placeholder="e.g. Create a products table with id, name, price, stock, and category_id columns. Add a foreign key to categories table."></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Database Dialect</label>
+                    <select id="dialect" class="form-select">
+                        <option value="mysql">MySQL</option>
+                        <option value="postgresql">PostgreSQL</option>
+                        <option value="sqlite">SQLite</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Extra Context <small class="text-muted">(optional)</small></label>
+                    <textarea id="extraContext" class="form-control" rows="2"
+                        placeholder="e.g. Table already has 1M rows, avoid full table scans."></textarea>
+                </div>
+                <button class="btn btn-primary px-4" id="generateBtn" onclick="generateSQL()">
+                    <i class="bi bi-play-fill me-1"></i>Generate SQL
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div id="resultSection" style="display:none">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center fw-semibold">
+                    <span><i class="bi bi-code-square me-2"></i>Generated SQL</span>
+                    <span id="riskBadge" class="badge fs-6"></span>
+                </div>
+                <div class="card-body">
+                    <pre class="sql-block" id="generatedSQL"></pre>
+                    <div id="issuesList" class="mt-3"></div>
+                    <div class="d-flex gap-2 mt-3">
+                        <a id="reviewLink" href="#" class="btn btn-outline-primary">
+                            <i class="bi bi-eye me-1"></i>Review Script
+                        </a>
+                        <button class="btn btn-outline-secondary" onclick="copySQL()">
+                            <i class="bi bi-clipboard me-1"></i>Copy SQL
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="errorAlert" class="alert alert-danger mt-3" style="display:none"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function generateSQL() {
+    const requestText = document.getElementById('requestText').value.trim();
+    const dialect = document.getElementById('dialect').value;
+    const extraContext = document.getElementById('extraContext').value.trim();
+    if (!requestText) { alert('Please enter a request description.'); return; }
+
+    const btn = document.getElementById('generateBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generating...';
+    document.getElementById('resultSection').style.display = 'none';
+    document.getElementById('errorAlert').style.display = 'none';
+
+    try {
+        const resp = await fetch('/api/generate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({request_text: requestText, dialect, extra_context: extraContext || null})
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || 'Generation failed');
+
+        document.getElementById('generatedSQL').textContent = data.record.generated_sql;
+        const rl = data.record.risk_level;
+        const badge = document.getElementById('riskBadge');
+        badge.textContent = 'Risk: ' + rl.charAt(0).toUpperCase() + rl.slice(1);
+        badge.className = 'badge fs-6 risk-badge-' + rl;
+
+        const issues = JSON.parse(data.record.risk_issues || '[]');
+        const issuesEl = document.getElementById('issuesList');
+        if (issues.length > 0) {
+            let html = '<h6 class="fw-semibold">Issues Detected:</h6><ul class="list-group list-group-flush">';
+            for (const i of issues) {
+                const cls = i.level === 'high' ? 'danger' : i.level === 'medium' ? 'warning' : 'secondary';
+                html += `<li class="list-group-item px-0">
+                    <span class="badge bg-${cls} me-2">${i.level}</span>
+                    <strong>${i.category}</strong>: ${i.message}
+                    <div class="text-muted small mt-1"><i class="bi bi-lightbulb me-1"></i>${i.suggestion}</div>
+                </li>`;
+            }
+            html += '</ul>';
+            issuesEl.innerHTML = html;
+        } else {
+            issuesEl.innerHTML = '<div class="alert alert-success py-2 mb-0"><i class="bi bi-check-circle me-2"></i>No issues detected.</div>';
+        }
+        document.getElementById('reviewLink').href = '/review/' + data.record.id;
+        document.getElementById('resultSection').style.display = 'block';
+    } catch(e) {
+        const el = document.getElementById('errorAlert');
+        el.textContent = 'Error: ' + e.message;
+        el.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Generate SQL';
+    }
+}
+
+function copySQL() {
+    const sql = document.getElementById('generatedSQL').textContent;
+    navigator.clipboard.writeText(sql).then(() => alert('Copied to clipboard!'));
+}
+</script>
+{% endblock %}

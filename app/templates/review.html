@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Review #{{ record.id }} – DB Script Agent{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="fw-bold mb-1"><i class="bi bi-clipboard-check me-2 text-primary"></i>Review Script #{{ record.id }}</h2>
+        <p class="text-muted mb-0">{{ record.request_text }}</p>
+    </div>
+    <a href="/history" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back</a>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <!-- SQL Block -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center fw-semibold">
+                <span><i class="bi bi-code-square me-2"></i>Generated SQL</span>
+                <div class="d-flex gap-2 align-items-center">
+                    <span class="badge bg-secondary">{{ record.dialect }}</span>
+                    {% if record.risk_level == 'high' %}<span class="badge risk-badge-high">High Risk</span>
+                    {% elif record.risk_level == 'medium' %}<span class="badge risk-badge-medium">Medium Risk</span>
+                    {% elif record.risk_level == 'low' %}<span class="badge risk-badge-low">Low Risk</span>
+                    {% else %}<span class="badge risk-badge-none">No Risk</span>{% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+                <pre class="sql-block" id="sqlBlock">{{ record.generated_sql }}</pre>
+                <button class="btn btn-sm btn-outline-secondary mt-2" onclick="copySQL()">
+                    <i class="bi bi-clipboard me-1"></i>Copy SQL
+                </button>
+            </div>
+        </div>
+
+        <!-- Risk Issues -->
+        {% if issues %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header fw-semibold text-danger">
+                <i class="bi bi-exclamation-triangle me-2"></i>Risk Issues ({{ issues|length }})
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for issue in issues %}
+                <li class="list-group-item">
+                    {% if issue.level == 'high' %}<span class="badge bg-danger me-2">HIGH</span>
+                    {% elif issue.level == 'medium' %}<span class="badge bg-warning text-dark me-2">MEDIUM</span>
+                    {% else %}<span class="badge bg-secondary me-2">LOW</span>{% endif %}
+                    <strong>{{ issue.category }}</strong>: {{ issue.message }}
+                    <div class="text-muted small mt-1"><i class="bi bi-lightbulb me-1"></i>{{ issue.suggestion }}</div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% else %}
+        <div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No risk issues detected.</div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <!-- Status & Actions -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header fw-semibold"><i class="bi bi-sliders me-2"></i>Actions</div>
+            <div class="card-body">
+                <p class="mb-2">
+                    <strong>Current Status:</strong>
+                    <span id="statusBadge"
+                        class="badge ms-1 {% if record.status == 'approved' %}bg-success{% elif record.status == 'rejected' %}bg-danger{% elif record.status == 'regenerating' %}bg-info{% else %}bg-warning text-dark{% endif %}">
+                        {{ record.status|capitalize }}
+                    </span>
+                </p>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">Notes</label>
+                    <textarea id="notesInput" class="form-control form-control-sm" rows="3"
+                        placeholder="Add review notes...">{{ record.notes or '' }}</textarea>
+                </div>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-success" onclick="updateStatus('approved')">
+                        <i class="bi bi-check-lg me-1"></i>Approve
+                    </button>
+                    <button class="btn btn-danger" onclick="updateStatus('rejected')">
+                        <i class="bi bi-x-lg me-1"></i>Reject
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="regenerate()">
+                        <i class="bi bi-arrow-repeat me-1"></i>Regenerate
+                    </button>
+                </div>
+                <div id="actionMsg" class="mt-2" style="display:none"></div>
+            </div>
+        </div>
+
+        <!-- Metadata -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header fw-semibold"><i class="bi bi-info-circle me-2"></i>Metadata</div>
+            <ul class="list-group list-group-flush small">
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">ID</span><strong>#{{ record.id }}</strong>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">Dialect</span><strong>{{ record.dialect }}</strong>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">Created</span><span>{{ record.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span class="text-muted">Updated</span><span>{{ record.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                </li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const recordId = {{ record.id }};
+
+async function updateStatus(status) {
+    const notes = document.getElementById('notesInput').value;
+    try {
+        const resp = await fetch('/api/records/' + recordId, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({status, notes})
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || 'Failed');
+        const badge = document.getElementById('statusBadge');
+        badge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+        badge.className = 'badge ms-1 ' + (status === 'approved' ? 'bg-success' : status === 'rejected' ? 'bg-danger' : 'bg-warning text-dark');
+        showMsg('Status updated to ' + status, 'success');
+    } catch(e) {
+        showMsg('Error: ' + e.message, 'danger');
+    }
+}
+
+async function regenerate() {
+    if (!confirm('Regenerate SQL for this record?')) return;
+    try {
+        const resp = await fetch('/api/regenerate/' + recordId, {method: 'POST'});
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || 'Failed');
+        document.getElementById('sqlBlock').textContent = data.record.generated_sql;
+        showMsg('SQL regenerated successfully. Reload to see updated risk info.', 'info');
+    } catch(e) {
+        showMsg('Error: ' + e.message, 'danger');
+    }
+}
+
+function showMsg(msg, type) {
+    const el = document.getElementById('actionMsg');
+    el.innerHTML = `<div class="alert alert-${type} py-2 small mb-0">${msg}</div>`;
+    el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', 4000);
+}
+
+function copySQL() {
+    navigator.clipboard.writeText(document.getElementById('sqlBlock').textContent)
+        .then(() => showMsg('Copied to clipboard!', 'success'));
+}
+</script>
+{% endblock %}
