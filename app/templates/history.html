@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}History – DB Script Agent{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0"><i class="bi bi-clock-history me-2 text-primary"></i>Script History</h2>
+    <a href="/api/history/export" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-download me-1"></i>Export JSON
+    </a>
+</div>
+
+<!-- Filters -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Dialect</label>
+                <select id="filterDialect" class="form-select form-select-sm" onchange="applyFilter()">
+                    <option value="">All Dialects</option>
+                    <option value="mysql">MySQL</option>
+                    <option value="postgresql">PostgreSQL</option>
+                    <option value="sqlite">SQLite</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Status</label>
+                <select id="filterStatus" class="form-select form-select-sm" onchange="applyFilter()">
+                    <option value="">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="regenerating">Regenerating</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Search</label>
+                <input type="text" id="filterSearch" class="form-control form-control-sm"
+                    placeholder="Search request..." oninput="applyFilter()">
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-sm btn-outline-secondary w-100" onclick="resetFilter()">
+                    <i class="bi bi-x-circle me-1"></i>Reset
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" id="historyTable">
+            <thead class="table-dark">
+                <tr>
+                    <th>#</th>
+                    <th>Request</th>
+                    <th>Dialect</th>
+                    <th>Risk</th>
+                    <th>Status</th>
+                    <th>Created At</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="historyBody">
+                {% for r in records %}
+                <tr data-dialect="{{ r.dialect }}" data-status="{{ r.status }}" data-request="{{ r.request_text|lower }}">
+                    <td>{{ r.id }}</td>
+                    <td class="text-truncate" style="max-width:200px" title="{{ r.request_text }}">{{ r.request_text }}</td>
+                    <td><span class="badge bg-secondary">{{ r.dialect }}</span></td>
+                    <td>
+                        {% if r.risk_level == 'high' %}<span class="badge risk-badge-high">High</span>
+                        {% elif r.risk_level == 'medium' %}<span class="badge risk-badge-medium">Medium</span>
+                        {% elif r.risk_level == 'low' %}<span class="badge risk-badge-low">Low</span>
+                        {% else %}<span class="badge risk-badge-none">None</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if r.status == 'approved' %}<span class="badge bg-success">Approved</span>
+                        {% elif r.status == 'rejected' %}<span class="badge bg-danger">Rejected</span>
+                        {% elif r.status == 'regenerating' %}<span class="badge bg-info">Regenerating</span>
+                        {% else %}<span class="badge bg-warning text-dark">Pending</span>{% endif %}
+                    </td>
+                    <td class="text-nowrap small">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        <a href="/review/{{ r.id }}" class="btn btn-sm btn-outline-primary me-1" title="Review">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteRecord({{ r.id }}, this)" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted py-4">No records found. <a href="/generate">Generate your first script</a>.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function applyFilter() {
+    const dialect = document.getElementById('filterDialect').value;
+    const status = document.getElementById('filterStatus').value;
+    const search = document.getElementById('filterSearch').value.toLowerCase();
+    document.querySelectorAll('#historyBody tr[data-dialect]').forEach(row => {
+        const matchDialect = !dialect || row.dataset.dialect === dialect;
+        const matchStatus = !status || row.dataset.status === status;
+        const matchSearch = !search || row.dataset.request.includes(search);
+        row.style.display = (matchDialect && matchStatus && matchSearch) ? '' : 'none';
+    });
+}
+
+function resetFilter() {
+    document.getElementById('filterDialect').value = '';
+    document.getElementById('filterStatus').value = '';
+    document.getElementById('filterSearch').value = '';
+    applyFilter();
+}
+
+async function deleteRecord(id, btn) {
+    if (!confirm('Mark record #' + id + ' as rejected?')) return;
+    btn.disabled = true;
+    try {
+        const resp = await fetch('/api/history/' + id, {method: 'DELETE'});
+        if (!resp.ok) throw new Error('Failed to delete');
+        btn.closest('tr').querySelector('td:nth-child(5)').innerHTML = '<span class="badge bg-danger">Rejected</span>';
+        btn.closest('tr').dataset.status = 'rejected';
+    } catch(e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+    }
+}
+</script>
+{% endblock %}
