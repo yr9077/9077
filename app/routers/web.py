@@ -38,9 +38,9 @@ async def index(request: Request, db: AsyncSession = Depends(get_db)):
     )
     recent = (await db.execute(recent_stmt)).scalars().all()
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
-            "request": request,
             "total": total,
             "approved": approved,
             "high_risk": high_risk,
@@ -51,7 +51,7 @@ async def index(request: Request, db: AsyncSession = Depends(get_db)):
 
 @router.get("/generate", response_class=HTMLResponse)
 async def generate_page(request: Request):
-    return templates.TemplateResponse("generate.html", {"request": request})
+    return templates.TemplateResponse(request, "generate.html")
 
 
 @router.get("/history", response_class=HTMLResponse)
@@ -59,7 +59,7 @@ async def history_page(request: Request, db: AsyncSession = Depends(get_db)):
     stmt = select(ScriptRecord).order_by(ScriptRecord.created_at.desc()).limit(50)
     records = (await db.execute(stmt)).scalars().all()
     return templates.TemplateResponse(
-        "history.html", {"request": request, "records": records}
+        request, "history.html", {"records": records}
     )
 
 
@@ -73,6 +73,5 @@ async def review_page(record_id: int, request: Request, db: AsyncSession = Depen
     except Exception:
         issues = []
     return templates.TemplateResponse(
-        "review.html",
-        {"request": request, "record": record, "issues": issues},
+        request, "review.html", {"record": record, "issues": issues}
     )

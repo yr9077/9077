@@ -38,7 +38,7 @@ async def delete_history(record_id: int, db: AsyncSession = Depends(get_db)):
     if not record:
         raise HTTPException(status_code=404, detail="Record not found.")
     record.status = "rejected"
-    await db.flush()
+    await db.commit()
     return {"message": f"Record {record_id} marked as rejected."}
 
 
